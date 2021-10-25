@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { useEffect, useState } from 'react';
 import Container from './Container/Container';
 import Searchbar from './Searchbar/Searchbar';
 import Button from './Button/Button';
@@ -9,141 +9,116 @@ import Loader from 'react-loader-spinner';
 import 'react-loader-spinner/dist/loader/css/react-spinner-loader.css';
 import s from './App.module.css';
 
-class App extends Component {
-  state = {
-    gallery: [],
-    searchQuery: '',
-    page: 1,
-    modalImg: '',
-    modalAlt: '',
-    showModal: false,
-    error: null,
-    status: 'idle',
-  };
+export default function App() {
+  const [gallery, setGallery] = useState([]);
+  const [status, setStatus] = useState('idle');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [modalImg, setModalImg] = useState('');
+  const [modalAlt, setModalAlt] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [error, setError] = useState(null);
 
-  componentDidUpdate(_, prevState) {
-    const prevQuery = prevState.searchQuery;
-    const nextQuery = this.state.searchQuery;
+  useEffect(() => {
+    if (query.trim() === '') {
+      return;
+    }
 
-    const prevPage = prevState.page;
-    const nextPage = this.state.page;
+    setStatus('pending');
 
-    if (nextPage > 1) {
-      window.scrollTo({
-        top: document.documentElement.scrollHeight,
-        behavior: 'smooth',
+    imagesAPI
+      .fetchImages(query, page)
+      .then(({ hits }) => {
+        const images = hits.map(({ id, webformatURL, largeImageURL, tags }) => {
+          return { id, webformatURL, largeImageURL, tags };
+        });
+        // console.log(images);
+        if (images.length > 0) {
+          setGallery(state => [...state, ...images]);
+          setStatus('resolved');
+        } else {
+          alert(`По запросу ${query} ничего не найдено.`);
+          setStatus('idle');
+        }
+      })
+      .catch(error => {
+        setError(error);
+        setStatus('rejected');
+      })
+      .finally(() => {
+        if (page > 1) {
+          window.scrollTo({
+            top: document.documentElement.scrollHeight,
+            behavior: 'smooth',
+          });
+        }
       });
-    }
+  }, [page, query]);
 
-    if (prevQuery !== nextQuery || prevPage !== nextPage) {
-      this.setState({ gallery: [], status: 'pending' });
-      imagesAPI
-        .fetchImages(nextQuery, nextPage)
-        .then(({ hits }) => {
-          const images = hits.map(
-            ({ id, webformatURL, largeImageURL, tags }) => {
-              return { id, webformatURL, largeImageURL, tags };
-            },
-          );
-          // console.log(images);
-          if (images.length > 0) {
-            this.setState(prevState => {
-              return {
-                gallery: [...prevState.gallery, ...images],
-                status: 'resolved',
-              };
-            });
-          } else {
-            alert(`По запросу ${nextQuery} ничего не найдено.`);
-            this.setState({ status: 'idle' });
-          }
-        })
-        .catch(error => this.setState({ error, status: 'rejected' }));
-    }
-  }
-
-  handleSubmitInput = newQuery => {
-    if (newQuery !== this.state.searchQuery) {
-      this.setState({ searchQuery: newQuery, page: 1 });
+  const handleSubmitInput = newQuery => {
+    if (newQuery !== query) {
+      setGallery([]);
+      setPage(1);
+      setQuery(newQuery);
     }
   };
 
-  handleClickImg = event => {
+  const handleClickImg = event => {
     const imgForModal = event.target.dataset.src;
     const altForModal = event.target.alt;
-    this.setState({
-      showModal: true,
-      modalImg: imgForModal,
-      modalAlt: altForModal,
-    });
+
+    setModalImg(imgForModal);
+    setModalAlt(altForModal);
+    setShowModal(true);
   };
 
-  handleClickBtn = () => {
-    this.setState(({ page }) => {
-      return { page: page + 1, status: 'pending' };
-    });
+  const handleClickBtn = () => {
+    setPage(state => state + 1);
+    setStatus('pending');
   };
 
-  toggleModal = () => {
-    this.setState(({ showModal }) => ({
-      showModal: !showModal,
-    }));
+  const toggleModal = () => {
+    setShowModal(!showModal);
   };
 
-  render() {
-    const { gallery, showModal, modalImg, modalAlt, error, status } =
-      this.state;
+  if (status === 'idle') {
+    return (
+      <Container>
+        <Searchbar onSubmit={handleSubmitInput} />
+      </Container>
+    );
+  }
 
-    if (status === 'idle') {
-      return (
+  if (status === 'rejected') {
+    return <h1>{error.message}</h1>;
+  }
+
+  if (status === 'resolved' || status === 'pending') {
+    return (
+      <>
+        {showModal && (
+          <Modal onClose={toggleModal}>
+            <img src={modalImg} alt={modalAlt} />
+          </Modal>
+        )}
         <Container>
-          <Searchbar onSubmit={this.handleSubmitInput} />
-        </Container>
-      );
-    }
-
-    if (status === 'pending') {
-      // console.log('pending', this.state.gallery);
-      return (
-        <Container>
-          <Searchbar onSubmit={this.handleSubmitInput} />
-          {gallery.length > 0 && <ImageGallery gallery={gallery} />}
-          <Loader
-            className={s.loader}
-            type="Circles"
-            color="#00BFFF"
-            height={80}
-            width={80}
-          />
-        </Container>
-      );
-    }
-
-    if (status === 'rejected') {
-      return <h1>{error.message}</h1>;
-    }
-
-    if (status === 'resolved') {
-      // console.log('resolved', this.state.gallery);
-      return (
-        <>
-          {showModal && (
-            <Modal onClose={this.toggleModal}>
-              <img src={modalImg} alt={modalAlt} />
-            </Modal>
+          <Searchbar onSubmit={handleSubmitInput} />
+          {gallery.length > 0 && (
+            <ImageGallery onClickImg={handleClickImg} gallery={gallery} />
           )}
-          <Container>
-            <Searchbar onSubmit={this.handleSubmitInput} />
-            <ImageGallery
-              onClickImg={this.handleClickImg}
-              gallery={this.state.gallery}
+          {status === 'pending' ? (
+            <Loader
+              className={s.loader}
+              type="Circles"
+              color="#00BFFF"
+              height={80}
+              width={80}
             />
-            <Button handleClickBtn={this.handleClickBtn} />
-          </Container>
-        </>
-      );
-    }
+          ) : (
+            <Button handleClickBtn={handleClickBtn} />
+          )}
+        </Container>
+      </>
+    );
   }
 }
-
-export default App;
